@@ -30,7 +30,7 @@ namespace Zoo.Animals
             // the fix is just to skip this check
             
             // Release the object only in case number of corpses > 100
-            while (Zoo.NumCorpses > 200) { }
+            //while (Zoo.NumCorpses > 200) { }
         }
     }
 }
