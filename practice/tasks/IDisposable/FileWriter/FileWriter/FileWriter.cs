@@ -1,11 +1,16 @@
 ﻿using System;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Convestudo.Unmanaged
 {
-    public class FileWriter: IFileWriter
+    public class FileWriter : IFileWriter, IDisposable
     {
-        private readonly IntPtr _fileHandle;
+        // Track whether Dispose has been called.
+        private bool disposed = false;
+
+        // Pointer to an external unmanaged resource.
+        private IntPtr _fileHandle;
 
         /// <summary>
         /// Creates file
@@ -36,8 +41,14 @@ namespace Convestudo.Unmanaged
 
         private void ThrowLastWin32Err()
         {
-            Marshal.ThrowExceptionForHR(
-             Marshal.GetHRForLastWin32Error());
+            var error = Marshal.GetHRForLastWin32Error();
+            // do not throw exception if:
+            // 0 : there's no exception
+            // 183 - Exception: Can not create a file when that already exists
+            if ((error & 0xffff) != 0 && (error & 0xffff) != 183)
+            {
+                Marshal.ThrowExceptionForHR(error);
+            }
         }
 
         public FileWriter(string fileName)
@@ -45,8 +56,8 @@ namespace Convestudo.Unmanaged
             _fileHandle = CreateFile(
                 fileName,
                 DesiredAccess.Write,
-                ShareMode.None, 
-                IntPtr.Zero, 
+                ShareMode.None,
+                IntPtr.Zero,
                 CreationDisposition.CreateAlways,
                 FlagsAndAttributes.Normal,
                 IntPtr.Zero);
@@ -56,10 +67,14 @@ namespace Convestudo.Unmanaged
 
         public void Write(string str)
         {
+            if (disposed)
+            {
+                throw new InvalidOperationException("file is already closed");
+            }
+
             var bytes = GetBytes(str);
             uint bytesWritten = 0;
-            WriteFile(_fileHandle, bytes, (uint) bytes.Length, ref bytesWritten, IntPtr.Zero);
-            //throw new System.NotImplementedException();
+            WriteFile(_fileHandle, bytes, (uint)bytes.Length, ref bytesWritten, IntPtr.Zero);
         }
 
         public void WriteLine(string str)
@@ -72,11 +87,46 @@ namespace Convestudo.Unmanaged
         /// </summary>
         /// <param name="str"></param>
         /// <returns></returns>
-        static byte[] GetBytes(string str)
+        private static byte[] GetBytes(string str)
         {
-            var bytes = new byte[str.Length * sizeof(char)];
-            Buffer.BlockCopy(str.ToCharArray(), 0, bytes, 0, bytes.Length);
+            var bytes = Encoding.ASCII.GetBytes(str);
             return bytes;
         }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!this.disposed)
+            {
+                if (disposing)
+                {
+                    //To clean up managed resources
+                }
+
+                //To clean up unmanaged resources
+                if (_fileHandle != IntPtr.Zero)
+                {
+                    CloseHandle(_fileHandle);
+                    _fileHandle = IntPtr.Zero;
+                }
+
+                // Note that disposing has been done.
+                disposed = true;
+            }
+        }
+
+        [System.Runtime.InteropServices.DllImport("Kernel32", SetLastError = true)]
+        private extern static bool CloseHandle(IntPtr handle);
+
+        ~FileWriter()
+        {
+            Dispose(false);
+        }
+
     }
 }
