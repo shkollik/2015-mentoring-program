@@ -12,6 +12,46 @@ namespace Convestudo.Unmanaged
         // Pointer to an external unmanaged resource.
         private IntPtr _fileHandle;
 
+        public FileWriter(string fileName)
+        {
+            _fileHandle = CreateFile(
+                fileName,
+                DesiredAccess.Write,
+                ShareMode.None,
+                IntPtr.Zero,
+                CreationDisposition.CreateAlways,
+                FlagsAndAttributes.Normal,
+                IntPtr.Zero);
+
+            //if the function "CreateFile" succeeds, the return value is an open handle to the specified file.
+            //If the function fails, the return value is INVALID_HANDLE_VALUE 
+            // and error will be thrown in "ThrowLastWin32Err" function
+            ThrowLastWin32Err();
+        }
+
+        private void ThrowLastWin32Err()
+        {
+            if (_fileHandle.ToInt32() == -1)
+                Marshal.ThrowExceptionForHR(Marshal.GetHRForLastWin32Error());
+        }
+
+        public void Write(string str)
+        {
+            if (disposed)
+            {
+                throw new InvalidOperationException("file is already closed");
+            }
+
+            var bytes = GetBytes(str);
+            uint bytesWritten = 0;
+            WriteFile(_fileHandle, bytes, (uint)bytes.Length, ref bytesWritten, IntPtr.Zero);
+        }
+
+        public void WriteLine(string str)
+        {
+            Write(String.Format("{0}{1}", str, Environment.NewLine));
+        }
+
         /// <summary>
         /// Creates file
         /// <see cref="http://msdn.microsoft.com/en-us/library/windows/desktop/aa363858(v=vs.85).aspx"/>
@@ -39,48 +79,8 @@ namespace Convestudo.Unmanaged
         [DllImport("kernel32.dll", SetLastError = true)]
         internal static extern bool WriteFile(IntPtr hFile, Byte[] aBuffer, UInt32 cbToWrite, ref UInt32 cbThatWereWritten, IntPtr pOverlapped);
 
-        private void ThrowLastWin32Err()
-        {
-            var error = Marshal.GetHRForLastWin32Error();
-            // do not throw exception if:
-            // 0 : there's no exception
-            // 183 - Exception: Can not create a file when that already exists
-            if ((error & 0xffff) != 0 && (error & 0xffff) != 183)
-            {
-                Marshal.ThrowExceptionForHR(error);
-            }
-        }
-
-        public FileWriter(string fileName)
-        {
-            _fileHandle = CreateFile(
-                fileName,
-                DesiredAccess.Write,
-                ShareMode.None,
-                IntPtr.Zero,
-                CreationDisposition.CreateAlways,
-                FlagsAndAttributes.Normal,
-                IntPtr.Zero);
-
-            ThrowLastWin32Err();
-        }
-
-        public void Write(string str)
-        {
-            if (disposed)
-            {
-                throw new InvalidOperationException("file is already closed");
-            }
-
-            var bytes = GetBytes(str);
-            uint bytesWritten = 0;
-            WriteFile(_fileHandle, bytes, (uint)bytes.Length, ref bytesWritten, IntPtr.Zero);
-        }
-
-        public void WriteLine(string str)
-        {
-            Write(String.Format("{0}{1}", str, Environment.NewLine));
-        }
+        [System.Runtime.InteropServices.DllImport("Kernel32", SetLastError = true)]
+        private extern static bool CloseHandle(IntPtr handle);
 
         /// <summary>
         /// Converts string to byte array
@@ -119,9 +119,6 @@ namespace Convestudo.Unmanaged
                 disposed = true;
             }
         }
-
-        [System.Runtime.InteropServices.DllImport("Kernel32", SetLastError = true)]
-        private extern static bool CloseHandle(IntPtr handle);
 
         ~FileWriter()
         {
